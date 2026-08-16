@@ -1,0 +1,29 @@
+{
+  "startedAt": "2026-08-16T00:54:36.098Z",
+  "passes": 5,
+  "totalTasks": 190,
+  "expectedRecordings": 1900,
+  "completed": [
+    {
+      "pass": 1,
+      "taskId": "84278296",
+      "completedAt": "2026-08-16T00:55:21.084Z"
+    },
+    {
+      "pass": 1,
+      "taskId": "84278297",
+      "completedAt": "2026-08-16T00:56:50.871Z"
+    },
+    {
+      "pass": 1,
+      "taskId": "84278298",
+      "completedAt": "2026-08-16T00:58:02.805Z"
+    },
+    {
+      "pass": 1,
+      "taskId": "84278299",
+      "completedAt": "2026-08-16T00:59:25.816Z"
+    }
+  ],
+  "failed": []
+}
