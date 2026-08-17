@@ -9,7 +9,7 @@ const path = require('path');
 const CDP_URL = 'http://127.0.0.1:9222';
 
 const PROJECT_URL =
-  'https://scale.dingtalk.com/projects/62430/data?task=84607088';
+  'https://scale.dingtalk.com/projects/62610/data';
 
 const TASKS_FILE =
   path.join(__dirname, 'tasks.json');
@@ -34,12 +34,6 @@ const TEST_TASK_ID = '84607088';
 //
 // Only tasks with IDs >= this value are processed.
 //
-// Example:
-//
-// 84607087 -> skipped
-// 84607088 -> processed
-// 84607089 -> processed
-//
 // ------------------------------------------------------------
 
 const START_TASK_ID = '84607088';
@@ -51,19 +45,32 @@ const START_TASK_ID = '84607088';
 const PASSES = 5;
 
 // ------------------------------------------------------------
+// PLAYBACKS PER TASK
+// ------------------------------------------------------------
+//
+// 5 means:
+//
+// Playback 1
+// Playback 2
+// Playback 3
+// Playback 4
+// Playback 5
+//
+// ------------------------------------------------------------
+
+const PLAYBACKS_PER_TASK = 5;
+
+// ------------------------------------------------------------
 // RETRY SETTINGS
 // ------------------------------------------------------------
 //
-// Maximum complete task attempts.
+// Maximum COMPLETE task attempts.
 //
-// Each attempt contains:
+// If something goes wrong during a task, the entire task
+// can still be retried up to this number.
 //
-// Annotation
-// Playback #1
-// Replay
-// Playback #2
-// Submit
-//
+// Unexpected pauses during playback DO NOT trigger this
+// retry. They are recovered automatically.
 // ------------------------------------------------------------
 
 const MAX_PLAYBACK_ATTEMPTS = 3;
@@ -1484,14 +1491,6 @@ async function getAudioState(audio) {
 // ============================================================
 // GET MAIN PLAYBACK BUTTON STATE
 // ============================================================
-//
-// DingTalk can sometimes produce:
-//
-// ariaLabel: "Play"
-// testId: "playback-button:pause"
-//
-// Therefore aria-label is the authoritative current state.
-// ============================================================
 
 async function getPlaybackButtonState() {
 
@@ -1559,10 +1558,14 @@ async function getPlaybackButtonState() {
 // WAIT FOR REAL DINGTALK PLAY BUTTON
 // ============================================================
 //
-// IMPORTANT:
+// Important:
 //
-// We trust aria-label="Play" instead of requiring:
-// data-testid="playback-button:play"
+// DingTalk sometimes has:
+//
+// aria-label="Play"
+// data-testid="playback-button:pause"
+//
+// Therefore we trust aria-label for the current state.
 //
 // ============================================================
 
@@ -1727,11 +1730,6 @@ async function clickMainPlayButton(taskId) {
 // ============================================================
 // PLAYBACK BUTTON RECOVERY
 // ============================================================
-//
-// Only treat aria-label="Pause" as a pause state.
-// data-testid can temporarily be stale.
-//
-// ============================================================
 
 async function recoverPlaybackButton(taskId) {
 
@@ -1751,6 +1749,7 @@ async function recoverPlaybackButton(taskId) {
       state
     );
 
+    // Only treat aria-label="Pause" as a real Pause state.
     if (
       state &&
       state.ariaLabel ===
@@ -2327,10 +2326,6 @@ async function clickAnnotationResult() {
 
     try {
 
-      // --------------------------------------------------------
-      // Check whether Annotation Result is already visible.
-      // --------------------------------------------------------
-
       const textarea =
         page.locator(
           'textarea[name="Annotation Result"]'
@@ -2372,10 +2367,6 @@ async function clickAnnotationResult() {
           // Continue.
         }
       }
-
-      // --------------------------------------------------------
-      // Find and click AnnotationItem.
-      // --------------------------------------------------------
 
       if (
         !annotationItemClicked
@@ -2515,10 +2506,6 @@ async function clickAnnotationResult() {
           continue;
         }
       }
-
-      // --------------------------------------------------------
-      // Click area below Annotation Items.
-      // --------------------------------------------------------
 
       console.log(
         'Clicking area below Annotation Items...'
@@ -2906,24 +2893,12 @@ async function recoverPausedPlayback(
 // WAIT FOR PLAYBACK TO FINISH
 // ============================================================
 //
-// IMPORTANT:
-//
-// DingTalk/Chrome may unexpectedly pause the audio when the
-// browser/tab loses foreground.
-//
-// Instead of waiting 120 seconds and failing:
+// Unexpected pause handling:
 //
 // paused + not ended
-//      ↓
-// bring DingTalk to foreground
-//      ↓
-// find Play button
-//      ↓
-// click Play
-//      ↓
-// continue the SAME playback
-//
-// This does NOT restart the task or add another playback.
+// → bring DingTalk foreground
+// → click Play
+// → continue SAME playback
 //
 // ============================================================
 
@@ -3140,12 +3115,11 @@ async function resetTaskAudio(
 // CLICK DINGTALK REPLAY FROM BEGINNING
 // ============================================================
 //
-// DingTalk can either:
+// For playback #2 onward:
 //
-// 1. Reset and automatically start playback.
-// 2. Reset and remain paused.
-//
-// We detect which behavior occurred.
+// click Replay
+// → detect whether it automatically starts
+// → if paused at beginning, click Play
 //
 // ============================================================
 
@@ -3305,20 +3279,16 @@ async function clickReplayFromBeginning(
 // CLICK SUBMIT BUTTON
 // ============================================================
 //
-// The current DingTalk button:
+// If disabled:
 //
-// button[aria-label="submit"][name="submit"]
-//
-// If disabled/gray:
-//
-// no changes to submit
-// → successfully skip
+// no changes
+// → skip Submit
+// → continue to next task
 //
 // If enabled:
 //
 // click Submit
 // → wait 4 seconds
-// → next task
 //
 // ============================================================
 
@@ -3402,7 +3372,7 @@ async function clickSubmitButton() {
           }
 
           // --------------------------------------------------
-          // SUBMIT CURRENTLY IN PROGRESS
+          // SUBMIT IS CURRENTLY BUSY
           // --------------------------------------------------
 
           if (
@@ -3473,17 +3443,17 @@ async function clickSubmitButton() {
 // PLAY WITH RETRY
 // ============================================================
 //
-// Each successful task:
+// Full task:
 //
-// 1. Annotation
-// 2. Trailing space
-// 3. Playback #1
-// 4. Replay
-// 5. Playback #2
-// 6. Submit
-//
-// Unexpected pauses during playback are recovered without
-// restarting the task.
+// Annotation
+// → Playback 1
+// → Replay
+// → Playback 2
+// → Replay
+// → Playback 3
+// → ...
+// → Playback N
+// → Submit
 //
 // ============================================================
 
@@ -3537,93 +3507,148 @@ async function playWithRetry(
       await clickAnnotationResult();
 
       // ======================================================
-      // PLAYBACK #1
+      // MULTIPLE PLAYBACKS
       // ======================================================
 
-      console.log(
-        `Starting playback 1/2 for task ${taskId}...`
-      );
+      for (
+        let playbackNumber = 1;
+        playbackNumber <= PLAYBACKS_PER_TASK;
+        playbackNumber++
+      ) {
 
-      await bringDingTalkToForeground();
+        console.log(
+          '\n----------------------------------------'
+        );
 
-      await clickMainPlayButton(
-        taskId
-      );
+        console.log(
+          `PLAYBACK ${playbackNumber}/${PLAYBACKS_PER_TASK} ` +
+          `| TASK ${taskId}`
+        );
 
-      await waitForPlaybackStart(
-        taskId,
-        audio
-      );
+        console.log(
+          '----------------------------------------'
+        );
 
-      await waitForPlaybackToFinish(
-        taskId,
-        audio
-      );
+        // ----------------------------------------------------
+        // PLAYBACK #1
+        // ----------------------------------------------------
+        //
+        // The first playback starts with the normal Play
+        // button.
+        //
+        // ----------------------------------------------------
 
-      console.log(
-        `First playback of task ${taskId} completed.`
-      );
+        if (
+          playbackNumber ===
+          1
+        ) {
 
-      // ======================================================
-      // PLAYBACK #2
-      // ======================================================
+          console.log(
+            `Starting playback 1/${PLAYBACKS_PER_TASK} for task ${taskId}...`
+          );
 
-      console.log(
-        `Preparing second playback for task ${taskId}...`
-      );
+          await bringDingTalkToForeground();
 
-      await bringDingTalkToForeground();
+          await clickMainPlayButton(
+            taskId
+          );
 
-      const replayStarted =
-        await clickReplayFromBeginning(
+        } else {
+
+          // --------------------------------------------------
+          // PLAYBACK #2+
+          // --------------------------------------------------
+          //
+          // Use DingTalk's Replay from beginning button.
+          //
+          // --------------------------------------------------
+
+          console.log(
+            `Preparing playback ${playbackNumber}/${PLAYBACKS_PER_TASK} for task ${taskId}...`
+          );
+
+          await bringDingTalkToForeground();
+
+          const replayStarted =
+            await clickReplayFromBeginning(
+              taskId,
+              audio
+            );
+
+          // ------------------------------------------------
+          // If Replay did NOT automatically start playback,
+          // click Play.
+          // ------------------------------------------------
+
+          if (
+            !replayStarted
+          ) {
+
+            console.log(
+              `Replay did not automatically start ${taskId}.`
+            );
+
+            await bringDingTalkToForeground();
+
+            await clickMainPlayButton(
+              taskId
+            );
+
+          } else {
+
+            console.log(
+              `Playback ${playbackNumber}/${PLAYBACKS_PER_TASK} ` +
+              `for ${taskId} is already running.`
+            );
+          }
+        }
+
+        // ----------------------------------------------------
+        // Verify playback actually started.
+        // ----------------------------------------------------
+
+        await waitForPlaybackStart(
           taskId,
           audio
         );
 
-      // ------------------------------------------------------
-      // If Replay already started audio, don't click Play.
-      // Otherwise click Play.
-      // ------------------------------------------------------
+        // ----------------------------------------------------
+        // Wait until THIS playback finishes.
+        //
+        // Unexpected pauses are automatically recovered.
+        // ----------------------------------------------------
 
-      if (
-        !replayStarted
-      ) {
-
-        console.log(
-          `Replay did not automatically start ${taskId}.`
+        await waitForPlaybackToFinish(
+          taskId,
+          audio
         );
 
-        await bringDingTalkToForeground();
-
-        await clickMainPlayButton(
-          taskId
+        console.log(
+          `Playback ${playbackNumber}/${PLAYBACKS_PER_TASK} ` +
+          `of task ${taskId} completed.`
         );
 
-      } else {
-
         console.log(
-          `Playback 2 for ${taskId} is already running.`
+          `Total duration so far: ` +
+          `${getTotalAudioPlayedMinutes()} minutes`
         );
       }
 
-      // ------------------------------------------------------
-      // Verify Playback #2.
-      // Unexpected pauses are automatically recovered inside
-      // waitForPlaybackToFinish().
-      // ------------------------------------------------------
+      // ======================================================
+      // ALL PLAYBACKS COMPLETE
+      // ======================================================
 
-      await waitForPlaybackStart(
-        taskId,
-        audio
-      );
-
-      await waitForPlaybackToFinish(
-        taskId,
-        audio
+      console.log(
+        '\n----------------------------------------'
       );
 
       console.log(
-        `Second playback of task ${taskId} completed.`
+        `ALL ${PLAYBACKS_PER_TASK} PLAYBACKS COMPLETE ` +
+        `FOR TASK ${taskId}`
+      );
+
+      console.log(
+        '----------------------------------------'
       );
 
       // ======================================================
@@ -3798,7 +3823,7 @@ async function playTask(taskId) {
 
   // ----------------------------------------------------------
   // STEP 4
-  // Initial reset.
+  // Reset initial audio.
   // ----------------------------------------------------------
 
   await resetTaskAudio(
@@ -3808,7 +3833,7 @@ async function playTask(taskId) {
 
   // ----------------------------------------------------------
   // STEP 5
-  // Annotation + 2 playbacks + Submit.
+  // Annotation + N playbacks + Submit.
   // ----------------------------------------------------------
 
   await playWithRetry(
@@ -3844,6 +3869,10 @@ async function testTask(
 
   console.log(
     `Testing task: ${taskId}`
+  );
+
+  console.log(
+    `Playback count per task: ${PLAYBACKS_PER_TASK}`
   );
 
   await moveSidebarToTop();
@@ -3912,6 +3941,10 @@ async function processOnePass(
   );
 
   console.log(
+    `PLAYBACKS PER TASK: ${PLAYBACKS_PER_TASK}`
+  );
+
+  console.log(
     '##################################################'
   );
 
@@ -3929,7 +3962,8 @@ async function processOnePass(
     );
 
     console.log(
-      `PASS ${passNumber}/${PASSES} | TASK ${i + 1}/${tasks.length}: ${taskId}`
+      `PASS ${passNumber}/${PASSES} | ` +
+      `TASK ${i + 1}/${tasks.length}: ${taskId}`
     );
 
     console.log(
@@ -4118,8 +4152,12 @@ async function processAllTasks(
   );
 
   console.log(
+    `Playback sessions per task: ${PLAYBACKS_PER_TASK}`
+  );
+
+  console.log(
     `Expected playback sessions: ` +
-    `${tasks.length * PASSES * 2}`
+    `${tasks.length * PASSES * PLAYBACKS_PER_TASK}`
   );
 
   console.log(
@@ -4127,7 +4165,7 @@ async function processAllTasks(
   );
 
   // ----------------------------------------------------------
-  // Reset audio duration.
+  // Reset duration tracker.
   // ----------------------------------------------------------
 
   totalAudioPlayedSeconds =
@@ -4150,13 +4188,16 @@ async function processAllTasks(
     passes:
       PASSES,
 
+    playbackPerTask:
+      PLAYBACKS_PER_TASK,
+
     totalTasks:
       tasks.length,
 
-    expectedRecordings:
+    expectedPlaybackSessions:
       tasks.length *
       PASSES *
-      2,
+      PLAYBACKS_PER_TASK,
 
     completed:
       [],
@@ -4246,8 +4287,12 @@ async function processAllTasks(
   );
 
   console.log(
+    `Playback sessions per task: ${PLAYBACKS_PER_TASK}`
+  );
+
+  console.log(
     `Expected playback sessions: ` +
-    `${tasks.length * PASSES * 2}`
+    `${tasks.length * PASSES * PLAYBACKS_PER_TASK}`
   );
 
   console.log(
@@ -4292,10 +4337,22 @@ async function main() {
 
   try {
 
+    // --------------------------------------------------------
+    // Connect.
+    // --------------------------------------------------------
+
     await connectToChrome();
+
+    // --------------------------------------------------------
+    // Load tasks.
+    // --------------------------------------------------------
 
     const tasks =
       loadTasks();
+
+    // --------------------------------------------------------
+    // Reset duration tracker.
+    // --------------------------------------------------------
 
     totalAudioPlayedSeconds =
       0;
@@ -4317,6 +4374,18 @@ async function main() {
     console.log(
       '========================================'
     );
+
+    console.log(
+      `Playback sessions per task: ${PLAYBACKS_PER_TASK}`
+    );
+
+    console.log(
+      '========================================'
+    );
+
+    // --------------------------------------------------------
+    // TEST MODE
+    // --------------------------------------------------------
 
     if (
       TEST_MODE
