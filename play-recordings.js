@@ -23,10 +23,10 @@ const RESULTS_FILE =
 
 // TRUE = test one task
 // FALSE = process all tasks
-const TEST_MODE = false;
+const TEST_MODE = true;
 
 // Used only when TEST_MODE = true.
-const TEST_TASK_ID = '84278296';
+const TEST_TASK_ID = '84607088';
 
 // ------------------------------------------------------------
 // START TASK
@@ -34,15 +34,9 @@ const TEST_TASK_ID = '84278296';
 //
 // Only tasks with IDs >= this value are processed.
 //
-// Example:
-//
-// 84278295 -> skipped
-// 84278296 -> processed
-// 84278297 -> processed
-//
 // ------------------------------------------------------------
 
-const START_TASK_ID = '84278296';
+const START_TASK_ID = '84607088';
 
 // ------------------------------------------------------------
 // NUMBER OF FULL PASSES
@@ -53,10 +47,11 @@ const PASSES = 5;
 // ------------------------------------------------------------
 // RETRY SETTINGS
 // ------------------------------------------------------------
-//
+
 // Maximum complete task attempts.
 //
 // Each attempt contains:
+//
 // Annotation
 // Playback #1
 // Replay
@@ -101,7 +96,7 @@ let context;
 let page;
 let sidebar;
 
-// Total actual audio duration successfully played
+// Total successfully played audio duration
 // during THIS program run.
 let totalAudioPlayedSeconds = 0;
 
@@ -1483,6 +1478,17 @@ async function getAudioState(audio) {
 // ============================================================
 // GET MAIN PLAYBACK BUTTON STATE
 // ============================================================
+//
+// IMPORTANT:
+//
+// DingTalk can sometimes produce this valid state:
+//
+// ariaLabel: "Play"
+// testId: "playback-button:pause"
+//
+// Therefore we trust aria-label for the actual state.
+//
+// ============================================================
 
 async function getPlaybackButtonState() {
 
@@ -1549,6 +1555,24 @@ async function getPlaybackButtonState() {
 // ============================================================
 // WAIT FOR REAL DINGTALK PLAY BUTTON
 // ============================================================
+//
+// IMPORTANT FIX:
+//
+// Previous selector:
+//
+// button[data-testid="playback-button:play"][aria-label="Play"]
+//
+// was too strict.
+//
+// DingTalk sometimes produces:
+//
+// aria-label="Play"
+// data-testid="playback-button:pause"
+//
+// We now trust aria-label="Play" while still requiring the
+// button to be one of DingTalk's playback buttons.
+//
+// ============================================================
 
 async function waitForMainPlayButton() {
 
@@ -1566,7 +1590,7 @@ async function waitForMainPlayButton() {
 
     const button =
       page.locator(
-        'button[data-testid="playback-button:play"][aria-label="Play"]'
+        'button[data-testid^="playback-button:"][aria-label="Play"]'
       ).first();
 
     const count =
@@ -1680,6 +1704,14 @@ async function clickMainPlayButton(taskId) {
     state
   );
 
+  // ----------------------------------------------------------
+  // IMPORTANT:
+  //
+  // Trust aria-label for the current state.
+  //
+  // data-testid may temporarily be stale.
+  // ----------------------------------------------------------
+
   if (
     state.ariaLabel !==
     'Play'
@@ -1711,6 +1743,18 @@ async function clickMainPlayButton(taskId) {
 // ============================================================
 // PLAYBACK BUTTON RECOVERY
 // ============================================================
+//
+// IMPORTANT FIX:
+//
+// Do NOT use data-testid alone to determine whether the player
+// is stuck in Pause.
+//
+// We use aria-label:
+//
+// aria-label="Pause" -> actually playing / pause state
+// aria-label="Play"  -> ready to play
+//
+// ============================================================
 
 async function recoverPlaybackButton(taskId) {
 
@@ -1730,19 +1774,26 @@ async function recoverPlaybackButton(taskId) {
       state
     );
 
+    // --------------------------------------------------------
+    // Only treat it as a stuck Pause button if the actual
+    // aria-label says Pause.
+    //
+    // Do NOT look only at data-testid.
+    // --------------------------------------------------------
+
     if (
       state &&
-      state.testId ===
-        'playback-button:pause'
+      state.ariaLabel ===
+        'Pause'
     ) {
 
       console.log(
-        'Playback button is stuck in Pause state. Resetting it...'
+        'Playback button is in Pause state. Resetting it...'
       );
 
       const pauseButton =
         page.locator(
-          'button[data-testid="playback-button:pause"]'
+          'button[data-testid^="playback-button:"][aria-label="Pause"]'
         ).first();
 
       if (
@@ -2900,12 +2951,6 @@ async function waitForPlaybackToFinish(
 // ============================================================
 // RESET AUDIO TO BEGINNING
 // ============================================================
-//
-// Used for initial task setup/recovery.
-//
-// The second playback uses DingTalk's own Replay button.
-//
-// ============================================================
 
 async function resetTaskAudio(
   taskId,
@@ -2941,17 +2986,12 @@ async function resetTaskAudio(
 // CLICK DINGTALK REPLAY FROM BEGINNING
 // ============================================================
 //
-// DingTalk's Replay button can have 2 behaviors:
+// DingTalk can either:
 //
 // 1. Reset and automatically start playback.
 // 2. Reset and remain paused.
 //
-// We detect which behavior happened.
-//
-// Returns:
-//
-// true  = Replay already started playback.
-// false = Replay reset audio but left it paused.
+// We detect the resulting audio state.
 //
 // ============================================================
 
@@ -3010,14 +3050,6 @@ async function clickReplayFromBeginning(
             `Replay from beginning clicked for task ${taskId}.`
           );
 
-          // --------------------------------------------------
-          // IMPORTANT:
-          //
-          // Replay may start the audio automatically.
-          // Therefore we inspect the audio before clicking
-          // the normal Play button.
-          // --------------------------------------------------
-
           const stateDeadline =
             Date.now() + 5000;
 
@@ -3036,7 +3068,6 @@ async function clickReplayFromBeginning(
 
             // ------------------------------------------------
             // CASE 1
-            //
             // Replay automatically started playback.
             // ------------------------------------------------
 
@@ -3058,8 +3089,7 @@ async function clickReplayFromBeginning(
 
             // ------------------------------------------------
             // CASE 2
-            //
-            // Replay reset the audio but left it paused.
+            // Replay reset and left audio paused.
             // ------------------------------------------------
 
             if (
@@ -3118,24 +3148,6 @@ async function clickReplayFromBeginning(
 // ============================================================
 // CLICK SUBMIT BUTTON
 // ============================================================
-//
-// IMPORTANT:
-//
-// The current DingTalk button is:
-//
-// button[aria-label="submit"][name="submit"]
-//
-// Its visible text is "Submit".
-//
-// If the button is disabled/gray, there are no changes to
-// submit. In that case, we treat the task as successfully
-// processed and immediately continue.
-//
-// After an actual Submit click, wait 4 seconds so DingTalk
-// can finish the submission and any warning/notification can
-// settle before opening the next task.
-//
-// ============================================================
 
 async function clickSubmitButton() {
 
@@ -3191,9 +3203,6 @@ async function clickSubmitButton() {
 
           // --------------------------------------------------
           // NO CHANGES
-          //
-          // Submit remains disabled when there is nothing
-          // to submit.
           // --------------------------------------------------
 
           if (
@@ -3220,7 +3229,7 @@ async function clickSubmitButton() {
           }
 
           // --------------------------------------------------
-          // SUBMISSION IS ALREADY IN PROGRESS
+          // SUBMISSION IN PROGRESS
           // --------------------------------------------------
 
           if (
@@ -3234,7 +3243,7 @@ async function clickSubmitButton() {
           }
 
           // --------------------------------------------------
-          // SUBMIT
+          // CLICK SUBMIT
           // --------------------------------------------------
 
           await button.scrollIntoViewIfNeeded();
@@ -3247,14 +3256,8 @@ async function clickSubmitButton() {
             'Submit button clicked successfully.'
           );
 
-          // --------------------------------------------------
-          // Give DingTalk time to finish submission.
-          //
-          // This is intentionally 4 seconds based on the
-          // behavior you observed with the previous Update
-          // button.
-          // --------------------------------------------------
-
+          // Give DingTalk time to finish submission
+          // and settle any warning popup.
           console.log(
             'Waiting 4 seconds for DingTalk to finish submitting...'
           );
@@ -3297,17 +3300,6 @@ async function clickSubmitButton() {
 
 // ============================================================
 // PLAY WITH RETRY
-// ============================================================
-//
-// Each successful task attempt:
-//
-// 1. Annotation
-// 2. Add trailing space
-// 3. Playback #1
-// 4. Replay from beginning
-// 5. Playback #2
-// 6. Submit
-//
 // ============================================================
 
 async function playWithRetry(
@@ -3402,12 +3394,6 @@ async function playWithRetry(
           taskId,
           audio
         );
-
-      // ------------------------------------------------------
-      // If Replay already started playback, DO NOT click Play.
-      //
-      // Otherwise Replay only reset the audio, so click Play.
-      // ------------------------------------------------------
 
       if (
         !replayStarted
@@ -3620,7 +3606,7 @@ async function playTask(taskId) {
 
   // ----------------------------------------------------------
   // STEP 4
-  // Reset initial audio.
+  // Initial reset.
   // ----------------------------------------------------------
 
   await resetTaskAudio(
@@ -3693,7 +3679,7 @@ async function testTask(
 
 
 // ============================================================
-// RESULT HELPERS
+// SAVE RESULTS
 // ============================================================
 
 function saveResults(
@@ -3828,11 +3814,6 @@ async function processOnePass(
         results
       );
 
-      // ------------------------------------------------------
-      // Do NOT stop the whole batch.
-      // Skip this task and continue.
-      // ------------------------------------------------------
-
       console.log(
         `Skipping ${taskId} and continuing to next task...`
       );
@@ -3864,10 +3845,6 @@ async function processAllTasks(
   console.log(
     '========================================'
   );
-
-  // ----------------------------------------------------------
-  // Validate tasks.
-  // ----------------------------------------------------------
 
   const originalTaskCount =
     tasks.length;
@@ -3901,10 +3878,6 @@ async function processAllTasks(
           : max,
       tasks[0]
     );
-
-  // ----------------------------------------------------------
-  // Filter from START_TASK_ID.
-  // ----------------------------------------------------------
 
   tasks =
     tasks.filter(
@@ -3957,10 +3930,6 @@ async function processAllTasks(
     '========================================'
   );
 
-  // ----------------------------------------------------------
-  // Reset running audio duration.
-  // ----------------------------------------------------------
-
   totalAudioPlayedSeconds =
     0;
 
@@ -3969,10 +3938,7 @@ async function processAllTasks(
   const startedAt =
     Date.now();
 
-  // ----------------------------------------------------------
-  // Start fresh results for THIS batch execution.
-  // ----------------------------------------------------------
-
+  // Fresh results for this run.
   const results = {
 
     startedAt:
@@ -4001,10 +3967,6 @@ async function processAllTasks(
     results
   );
 
-  // ----------------------------------------------------------
-  // Process all passes.
-  // ----------------------------------------------------------
-
   for (
     let pass = 1;
     pass <= PASSES;
@@ -4017,10 +3979,6 @@ async function processAllTasks(
       results
     );
   }
-
-  // ----------------------------------------------------------
-  // Final statistics.
-  // ----------------------------------------------------------
 
   const elapsedSeconds =
     (
@@ -4123,22 +4081,10 @@ async function main() {
 
   try {
 
-    // --------------------------------------------------------
-    // Connect
-    // --------------------------------------------------------
-
     await connectToChrome();
-
-    // --------------------------------------------------------
-    // Load tasks.
-    // --------------------------------------------------------
 
     const tasks =
       loadTasks();
-
-    // --------------------------------------------------------
-    // Reset audio duration.
-    // --------------------------------------------------------
 
     totalAudioPlayedSeconds =
       0;
@@ -4160,10 +4106,6 @@ async function main() {
     console.log(
       '========================================'
     );
-
-    // --------------------------------------------------------
-    // TEST MODE
-    // --------------------------------------------------------
 
     if (
       TEST_MODE
@@ -4203,11 +4145,6 @@ async function main() {
       1;
 
   } finally {
-
-    // --------------------------------------------------------
-    // Disconnect from existing Chrome without intentionally
-    // closing the user's browser window.
-    // --------------------------------------------------------
 
     try {
 
