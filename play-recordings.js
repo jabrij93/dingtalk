@@ -36,9 +36,9 @@ const TEST_TASK_ID = '84278296';
 //
 // Example:
 //
-// 84278713 -> skipped
-// 84278714 -> processed
-// 84278715 -> processed
+// 84278295 -> skipped
+// 84278296 -> processed
+// 84278297 -> processed
 //
 // ------------------------------------------------------------
 
@@ -53,9 +53,18 @@ const PASSES = 5;
 // ------------------------------------------------------------
 // RETRY SETTINGS
 // ------------------------------------------------------------
-
+//
 // Maximum complete task attempts.
-// Each attempt contains 2 playbacks.
+//
+// Each attempt contains:
+// Annotation
+// Playback #1
+// Replay
+// Playback #2
+// Submit
+//
+// ------------------------------------------------------------
+
 const MAX_PLAYBACK_ATTEMPTS = 3;
 
 // ------------------------------------------------------------
@@ -78,7 +87,7 @@ const TIMEOUT = {
 
   PLAYBACK_FINISH: 120000,
 
-  UPDATE_BUTTON: 15000,
+  SUBMIT_BUTTON: 15000,
 
 };
 
@@ -1925,12 +1934,6 @@ async function clickAreaBelowAnnotationItems() {
           const rect =
             el.getBoundingClientRect();
 
-          const parent =
-            el.parentElement;
-
-          const parentRect =
-            parent?.getBoundingClientRect();
-
           return {
 
             heading: {
@@ -1953,31 +1956,7 @@ async function clickAreaBelowAnnotationItems() {
               bottom:
                 rect.bottom,
 
-            },
-
-            parent: parentRect
-              ? {
-
-                  left:
-                    parentRect.left,
-
-                  top:
-                    parentRect.top,
-
-                  width:
-                    parentRect.width,
-
-                  height:
-                    parentRect.height,
-
-                  right:
-                    parentRect.right,
-
-                  bottom:
-                    parentRect.bottom,
-
-                }
-              : null,
+            }
 
           };
         }
@@ -2011,67 +1990,59 @@ async function clickAreaBelowAnnotationItems() {
           const h =
             geometry.heading;
 
-          const points = [];
+          const points = [
 
-          points.push({
+            {
+              x:
+                h.left +
+                h.width / 2,
 
-            x:
-              h.left +
-              h.width / 2,
+              y:
+                h.bottom +
+                45,
+            },
 
-            y:
-              h.bottom +
-              45,
+            {
+              x:
+                h.left +
+                h.width / 2,
 
-          });
+              y:
+                h.bottom +
+                75,
+            },
 
-          points.push({
+            {
+              x:
+                h.left +
+                h.width / 2,
 
-            x:
-              h.left +
-              h.width / 2,
+              y:
+                h.bottom +
+                110,
+            },
 
-            y:
-              h.bottom +
-              75,
+            {
+              x:
+                h.left +
+                30,
 
-          });
+              y:
+                h.bottom +
+                60,
+            },
 
-          points.push({
+            {
+              x:
+                h.right -
+                30,
 
-            x:
-              h.left +
-              h.width / 2,
+              y:
+                h.bottom +
+                60,
+            },
 
-            y:
-              h.bottom +
-              110,
-
-          });
-
-          points.push({
-
-            x:
-              h.left +
-              30,
-
-            y:
-              h.bottom +
-              60,
-
-          });
-
-          points.push({
-
-            x:
-              h.right -
-              30,
-
-            y:
-              h.bottom +
-              60,
-
-          });
+          ];
 
           for (
             const point of
@@ -2215,26 +2186,30 @@ async function clickAreaBelowAnnotationItems() {
                 '.anno-area'
               );
 
+            const visible =
+              element => {
+
+                if (!element) {
+                  return false;
+                }
+
+                return !!(
+                  element.offsetWidth ||
+                  element.offsetHeight ||
+                  element.getClientRects().length
+                );
+              };
+
             return {
 
               textarea:
-                !!(
-                  textarea &&
-                  (
-                    textarea.offsetWidth ||
-                    textarea.offsetHeight ||
-                    textarea.getClientRects().length
-                  )
+                visible(
+                  textarea
                 ),
 
               annoArea:
-                !!(
-                  annoArea &&
-                  (
-                    annoArea.offsetWidth ||
-                    annoArea.offsetHeight ||
-                    annoArea.getClientRects().length
-                  )
+                visible(
+                  annoArea
                 ),
 
             };
@@ -2928,8 +2903,7 @@ async function waitForPlaybackToFinish(
 //
 // Used for initial task setup/recovery.
 //
-// For the second playback, we use DingTalk's own
-// "Replay from beginning" button instead.
+// The second playback uses DingTalk's own Replay button.
 //
 // ============================================================
 
@@ -2967,19 +2941,17 @@ async function resetTaskAudio(
 // CLICK DINGTALK REPLAY FROM BEGINNING
 // ============================================================
 //
-// DingTalk's "Replay from beginning" may either:
+// DingTalk's Replay button can have 2 behaviors:
 //
-// 1. Reset the audio AND start playing automatically.
-// OR
+// 1. Reset and automatically start playback.
+// 2. Reset and remain paused.
 //
-// 2. Reset the audio and leave it paused.
-//
-// We handle both cases.
+// We detect which behavior happened.
 //
 // Returns:
 //
-// true  = Replay already started playback
-// false = Replay reset audio but left it paused
+// true  = Replay already started playback.
+// false = Replay reset audio but left it paused.
 //
 // ============================================================
 
@@ -3039,10 +3011,11 @@ async function clickReplayFromBeginning(
           );
 
           // --------------------------------------------------
-          // IMPORTANT
+          // IMPORTANT:
           //
-          // DingTalk may automatically start playback here.
-          // Do NOT immediately click Play.
+          // Replay may start the audio automatically.
+          // Therefore we inspect the audio before clicking
+          // the normal Play button.
           // --------------------------------------------------
 
           const stateDeadline =
@@ -3086,7 +3059,7 @@ async function clickReplayFromBeginning(
             // ------------------------------------------------
             // CASE 2
             //
-            // Replay reset to beginning and left it paused.
+            // Replay reset the audio but left it paused.
             // ------------------------------------------------
 
             if (
@@ -3143,18 +3116,36 @@ async function clickReplayFromBeginning(
 
 
 // ============================================================
-// CLICK UPDATE BUTTON
+// CLICK SUBMIT BUTTON
+// ============================================================
+//
+// IMPORTANT:
+//
+// The current DingTalk button is:
+//
+// button[aria-label="submit"][name="submit"]
+//
+// Its visible text is "Submit".
+//
+// If the button is disabled/gray, there are no changes to
+// submit. In that case, we treat the task as successfully
+// processed and immediately continue.
+//
+// After an actual Submit click, wait 4 seconds so DingTalk
+// can finish the submission and any warning/notification can
+// settle before opening the next task.
+//
 // ============================================================
 
-async function clickUpdateButton() {
+async function clickSubmitButton() {
 
   console.log(
-    'Waiting for Update button...'
+    'Waiting for Submit button...'
   );
 
   const deadline =
     Date.now() +
-    TIMEOUT.UPDATE_BUTTON;
+    TIMEOUT.SUBMIT_BUTTON;
 
   while (
     Date.now() <
@@ -3190,7 +3181,7 @@ async function clickUpdateButton() {
             ).trim();
 
           console.log(
-            'Update button detected:',
+            'Submit button detected:',
             {
               text,
               disabled,
@@ -3198,14 +3189,39 @@ async function clickUpdateButton() {
             }
           );
 
+          // --------------------------------------------------
+          // NO CHANGES
+          //
+          // Submit remains disabled when there is nothing
+          // to submit.
+          // --------------------------------------------------
+
           if (
             disabled
           ) {
 
-            await sleep(500);
+            console.log(
+              'Submit button is disabled. No changes detected.'
+            );
 
-            continue;
+            console.log(
+              'Skipping Submit and continuing to the next task.'
+            );
+
+            return {
+
+              submitted:
+                false,
+
+              reason:
+                'no-changes',
+
+            };
           }
+
+          // --------------------------------------------------
+          // SUBMISSION IS ALREADY IN PROGRESS
+          // --------------------------------------------------
 
           if (
             waiting ===
@@ -3217,6 +3233,10 @@ async function clickUpdateButton() {
             continue;
           }
 
+          // --------------------------------------------------
+          // SUBMIT
+          // --------------------------------------------------
+
           await button.scrollIntoViewIfNeeded();
 
           await sleep(300);
@@ -3224,28 +3244,42 @@ async function clickUpdateButton() {
           await button.click();
 
           console.log(
-            'Update button clicked successfully.'
+            'Submit button clicked successfully.'
           );
 
-          // Give DingTalk time to complete the update
-          // and handle any warning/notification popup.
+          // --------------------------------------------------
+          // Give DingTalk time to finish submission.
+          //
+          // This is intentionally 4 seconds based on the
+          // behavior you observed with the previous Update
+          // button.
+          // --------------------------------------------------
+
           console.log(
-            'Waiting 4 seconds for DingTalk to finish updating...'
+            'Waiting 4 seconds for DingTalk to finish submitting...'
           );
 
           await sleep(4000);
 
           console.log(
-            'Update wait complete.'
+            'Submit wait complete.'
           );
 
-          return;
+          return {
+
+            submitted:
+              true,
+
+            reason:
+              'submitted',
+
+          };
         }
 
       } catch (error) {
 
         console.log(
-          'Update button interaction is still loading:',
+          'Submit button interaction is still loading:',
           error.message
         );
       }
@@ -3255,8 +3289,8 @@ async function clickUpdateButton() {
   }
 
   throw new Error(
-    'Update button did not become ready within ' +
-    `${TIMEOUT.UPDATE_BUTTON / 1000} seconds.`
+    'Submit button did not become ready within ' +
+    `${TIMEOUT.SUBMIT_BUTTON / 1000} seconds.`
   );
 }
 
@@ -3272,7 +3306,7 @@ async function clickUpdateButton() {
 // 3. Playback #1
 // 4. Replay from beginning
 // 5. Playback #2
-// 6. Update
+// 6. Submit
 //
 // ============================================================
 
@@ -3363,10 +3397,6 @@ async function playWithRetry(
 
       await bringDingTalkToForeground();
 
-      // ------------------------------------------------------
-      // Use DingTalk's own Replay button.
-      // ------------------------------------------------------
-
       const replayStarted =
         await clickReplayFromBeginning(
           taskId,
@@ -3374,8 +3404,7 @@ async function playWithRetry(
         );
 
       // ------------------------------------------------------
-      // If Replay automatically started playback,
-      // do NOT click Play again.
+      // If Replay already started playback, DO NOT click Play.
       //
       // Otherwise Replay only reset the audio, so click Play.
       // ------------------------------------------------------
@@ -3402,7 +3431,7 @@ async function playWithRetry(
       }
 
       // ------------------------------------------------------
-      // Verify Playback #2.
+      // Verify playback #2.
       // ------------------------------------------------------
 
       await waitForPlaybackStart(
@@ -3420,16 +3449,28 @@ async function playWithRetry(
       );
 
       // ======================================================
-      // UPDATE
+      // SUBMIT
       // ======================================================
 
       await bringDingTalkToForeground();
 
-      await clickUpdateButton();
+      const submitResult =
+        await clickSubmitButton();
 
-      console.log(
-        `TASK ${taskId} UPDATE COMPLETE`
-      );
+      if (
+        submitResult.submitted
+      ) {
+
+        console.log(
+          `TASK ${taskId} SUBMIT COMPLETE`
+        );
+
+      } else {
+
+        console.log(
+          `TASK ${taskId} had no changes to submit.`
+        );
+      }
 
       return;
 
@@ -3589,7 +3630,7 @@ async function playTask(taskId) {
 
   // ----------------------------------------------------------
   // STEP 5
-  // Annotation + 2 playbacks + Update.
+  // Annotation + 2 playbacks + Submit.
   // ----------------------------------------------------------
 
   await playWithRetry(
@@ -3654,70 +3695,6 @@ async function testTask(
 // ============================================================
 // RESULT HELPERS
 // ============================================================
-
-function loadExistingResults() {
-
-  if (
-    !fs.existsSync(
-      RESULTS_FILE
-    )
-  ) {
-
-    return {
-
-      startedAt:
-        new Date().toISOString(),
-
-      passes:
-        PASSES,
-
-      totalTasks:
-        0,
-
-      completed:
-        [],
-
-      failed:
-        [],
-
-    };
-  }
-
-  try {
-
-    const raw =
-      fs.readFileSync(
-        RESULTS_FILE,
-        'utf8'
-      );
-
-    return JSON.parse(
-      raw
-    );
-
-  } catch {
-
-    return {
-
-      startedAt:
-        new Date().toISOString(),
-
-      passes:
-        PASSES,
-
-      totalTasks:
-        0,
-
-      completed:
-        [],
-
-      failed:
-        [],
-
-    };
-  }
-}
-
 
 function saveResults(
   results
@@ -3851,11 +3828,10 @@ async function processOnePass(
         results
       );
 
-      // IMPORTANT:
-      //
-      // Do not stop the whole batch.
+      // ------------------------------------------------------
+      // Do NOT stop the whole batch.
       // Skip this task and continue.
-      //
+      // ------------------------------------------------------
 
       console.log(
         `Skipping ${taskId} and continuing to next task...`
@@ -3890,7 +3866,7 @@ async function processAllTasks(
   );
 
   // ----------------------------------------------------------
-  // Filter tasks starting from START_TASK_ID.
+  // Validate tasks.
   // ----------------------------------------------------------
 
   const originalTaskCount =
@@ -3909,7 +3885,8 @@ async function processAllTasks(
   const minimumTaskId =
     tasks.reduce(
       (min, id) =>
-        BigInt(id) < BigInt(min)
+        BigInt(id) <
+        BigInt(min)
           ? id
           : min,
       tasks[0]
@@ -3918,11 +3895,16 @@ async function processAllTasks(
   const maximumTaskId =
     tasks.reduce(
       (max, id) =>
-        BigInt(id) > BigInt(max)
+        BigInt(id) >
+        BigInt(max)
           ? id
           : max,
       tasks[0]
     );
+
+  // ----------------------------------------------------------
+  // Filter from START_TASK_ID.
+  // ----------------------------------------------------------
 
   tasks =
     tasks.filter(
@@ -3966,7 +3948,6 @@ async function processAllTasks(
     `Total passes: ${PASSES}`
   );
 
-  // Each task is played twice.
   console.log(
     `Expected playback sessions: ` +
     `${tasks.length * PASSES * 2}`
@@ -3977,7 +3958,7 @@ async function processAllTasks(
   );
 
   // ----------------------------------------------------------
-  // Reset total audio duration for this program run.
+  // Reset running audio duration.
   // ----------------------------------------------------------
 
   totalAudioPlayedSeconds =
@@ -4142,10 +4123,22 @@ async function main() {
 
   try {
 
+    // --------------------------------------------------------
+    // Connect
+    // --------------------------------------------------------
+
     await connectToChrome();
+
+    // --------------------------------------------------------
+    // Load tasks.
+    // --------------------------------------------------------
 
     const tasks =
       loadTasks();
+
+    // --------------------------------------------------------
+    // Reset audio duration.
+    // --------------------------------------------------------
 
     totalAudioPlayedSeconds =
       0;
@@ -4167,6 +4160,10 @@ async function main() {
     console.log(
       '========================================'
     );
+
+    // --------------------------------------------------------
+    // TEST MODE
+    // --------------------------------------------------------
 
     if (
       TEST_MODE
@@ -4206,6 +4203,11 @@ async function main() {
       1;
 
   } finally {
+
+    // --------------------------------------------------------
+    // Disconnect from existing Chrome without intentionally
+    // closing the user's browser window.
+    // --------------------------------------------------------
 
     try {
 
