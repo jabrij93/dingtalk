@@ -23,10 +23,10 @@ const RESULTS_FILE =
 
 // TRUE = test one task
 // FALSE = process all tasks
-const TEST_MODE = true;
+const TEST_MODE = false;
 
 // Used only when TEST_MODE = true.
-const TEST_TASK_ID = '84607088';
+const TEST_TASK_ID = '84806463';
 
 // ------------------------------------------------------------
 // START TASK
@@ -36,7 +36,7 @@ const TEST_TASK_ID = '84607088';
 //
 // ------------------------------------------------------------
 
-const START_TASK_ID = '84607088';
+const START_TASK_ID = '84806463';
 
 // ------------------------------------------------------------
 // NUMBER OF FULL PASSES
@@ -58,7 +58,7 @@ const PASSES = 5;
 //
 // ------------------------------------------------------------
 
-const PLAYBACKS_PER_TASK = 5;
+const PLAYBACKS_PER_TASK = 6;
 
 // ------------------------------------------------------------
 // RETRY SETTINGS
@@ -4446,4 +4446,4 @@ async function main() {
 // START
 // ============================================================
 
-main();
+main(); 
